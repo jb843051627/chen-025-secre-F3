@@ -127,6 +127,77 @@ CREATE TABLE IF NOT EXISTS t_secre_warn_line (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='届期预警分级线';
 
+-- 三道闸密级变更（新名目 level_gate；旧 t_secre_level_bill 的 approval-chain 形状锁住不动）
+-- 口径：已签人数不设列、不留格子给人填——一律由流水逐笔点出来；屏上所见只是回显。
+-- 表 1：三闸密级变更单（一张单只由册面上那一行带出：同一载体、同一回变更只带得出一张）
+CREATE TABLE IF NOT EXISTS t_secre_level_gate_bill (
+  id bigint NOT NULL COMMENT '主键',
+  bill_no varchar(64) NOT NULL COMMENT '三闸密级变更单号（一支笔只此一处入口）',
+  carrier_id bigint NOT NULL COMMENT '带出这张单的册面行（t_secre_carrier.id）',
+  carrier_no varchar(64) DEFAULT NULL COMMENT '涉密载体件码（冗余，对册面）',
+  change_kind int NOT NULL COMMENT '这一回的走法 0往上抬 1往下压 2整个解开',
+  from_level int DEFAULT NULL COMMENT '从哪一级（起单时册面原值快照）',
+  to_level int DEFAULT NULL COMMENT '挪到哪一级（齐闸后才写得进去）',
+  gate_no int NOT NULL COMMENT '整张单停在哪一截 0承办部门岗 1本机关保密办 2上级主管部门 3齐闸',
+  gate_status int NOT NULL COMMENT '本截情形 0候签 2挂待议 3已封住（1为点满当口的瞬态，不落库；停截由 gate_no 点出）',
+  round_no int NOT NULL DEFAULT 1 COMMENT '重头往上走的回数（压回几回就加几；各截各认自己落字那一回）',
+  seal_time datetime DEFAULT NULL COMMENT '齐闸封住那一刻',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除（齐闸后一笔进不来、一字改不了、整张也抽不走）',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (id),
+  KEY idx_carrier_gate (carrier_id, gate_no),
+  KEY idx_status (gate_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='三闸密级变更单';
+
+-- 各闸该几名落字、按什么算放过——配置钉死在代码枚举里，报文里写了第几段、几个人，
+-- 进到库里一概不算数；段位与人数以引擎点出来的为凭。
+--   闸0 承办部门那一名办事的岗：候 1 名，一名落字即放过（MODE_ONE）
+--   闸1 本机关保密办：候 2 名，头一个落字那方的说法是定论（MODE_FIRST_WINS）
+--   闸2 上级主管部门对口两名：候 2 名，两句都写「可」才算过（MODE_BOTH_AGREE）
+
+-- 表 2：逐笔落字流水（顺序由 DB 时间戳定；同瞬两名各按各的先后记，不并成一句）
+CREATE TABLE IF NOT EXISTS t_secre_level_gate_sign (
+  id bigint NOT NULL COMMENT '主键',
+  bill_id bigint NOT NULL COMMENT '对哪张三闸单',
+  gate_no int NOT NULL COMMENT '落在哪一闸 0/1/2',
+  round_no int NOT NULL COMMENT '落在哪一回（被压回那一闸重头走，本轮与上轮各放各格）',
+  sign_seq int NOT NULL COMMENT '本闸本回里第几笔（顺着谁先谁后一笔一笔点出来的序）',
+  signer_no varchar(64) NOT NULL COMMENT '落字岗位/人员代号',
+  verdict int NOT NULL COMMENT '写下的字 1可 0不可',
+  word varchar(500) DEFAULT NULL COMMENT '写下的原话（两方的字都留底，屏上两行都摆着）',
+  signed_at datetime(3) NOT NULL COMMENT '各自落字那一刻（日后复核只认这一刻）',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_bill_gate_round_signer (bill_id, gate_no, round_no, signer_no),
+  KEY idx_bill_gate_round (bill_id, gate_no, round_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='三闸单逐笔落字流水';
+
+-- 表 3：载体密级变更履历（齐闸后叠在册面那一行上，可一段一段倒着捋）
+CREATE TABLE IF NOT EXISTS t_secre_carrier_level_log (
+  id bigint NOT NULL COMMENT '主键',
+  carrier_id bigint NOT NULL COMMENT '叠在哪一行（t_secre_carrier.id）',
+  bill_id bigint NOT NULL COMMENT '凭的是哪一张单',
+  bill_no varchar(64) NOT NULL COMMENT '单号（留底）',
+  change_kind int NOT NULL COMMENT '走法 0往上抬 1往下压 2整个解开',
+  from_level int DEFAULT NULL COMMENT '从哪一级',
+  to_level int NOT NULL COMMENT '挪到哪一级',
+  write_ups text COMMENT '各闸各笔的字：闸次、回次、序、谁、可不可、原话、时刻（一条收口的账）',
+  sealed_at datetime(3) NOT NULL COMMENT '齐闸那一刻',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  PRIMARY KEY (id),
+  KEY idx_carrier_seq (carrier_id, sealed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='载体密级变更履历';
+
+-- 册面那一行加密级栏；履历与册面改动出自同一回计算（同一事务），口径一致。
+ALTER TABLE t_secre_carrier
+  ADD COLUMN level_no int DEFAULT NULL COMMENT '当前密级 1秘密 2机密 3绝密 0已解密（整个解开）' AFTER status;
+
 -- 初始档案数据（id=1 启用 / id=2 停用）
 -- t_secre_org_book 两条种子名录：book_id=0 在册、book_id=1 已撤出（供后续挂接与挡新入册
 -- 判定项取用）。名录代号与类别按「三类各排各的序」的说法给值。

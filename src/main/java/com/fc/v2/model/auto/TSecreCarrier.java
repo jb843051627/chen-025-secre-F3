@@ -76,6 +76,11 @@ public class TSecreCarrier implements Serializable {
     @ApiModelProperty(value = "册面情形 0新入册 1已收齐 2缺项")
     private Integer status;
 
+    /** 当前密级 1秘密 2机密 3绝密 0已解密（整个解开）；只随三闸齐闸而换，不由人手改 */
+    @TableField("level_no")
+    @ApiModelProperty(value = "当前密级 1秘密 2机密 3绝密 0已解密")
+    private Integer levelNo;
+
     /** 删除标记 0正常 1删除 */
     @TableField("del_flag")
     @ApiModelProperty(value = "删除标记 0正常 1删除")
@@ -186,6 +191,14 @@ public class TSecreCarrier implements Serializable {
 
     public void setStatus(Integer status) {
         this.status = status;
+    }
+
+    public Integer getLevelNo() {
+        return levelNo;
+    }
+
+    public void setLevelNo(Integer levelNo) {
+        this.levelNo = levelNo;
     }
 
     public Integer getDelFlag() {
