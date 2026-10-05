@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS t_secre_carrier (
   got_num int DEFAULT NULL COMMENT '已收件数',
   lack_num int DEFAULT NULL COMMENT '还差几件（轧出来，不手填）',
   content varchar(255) DEFAULT NULL COMMENT '随件交来的载体题名与要件',
+  level_no int DEFAULT NULL COMMENT '密级栏 1秘密 2机密 3绝密（只随齐闸会签单换，不手填）',
   status int DEFAULT NULL COMMENT '册面情形 0新入册 1已收齐 2缺项',
   del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
   create_by varchar(64) DEFAULT NULL COMMENT '创建者',
@@ -72,6 +73,78 @@ CREATE TABLE IF NOT EXISTS t_secre_level_bill (
   remark varchar(500) DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='密级变更签批单';
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 密级变更三道闸会签（新名目 countersign，承接六则；旧 t_secre_level_bill 形状锁住不动）
+--   头闸 0 承办部门经办岗（1 名即过）
+--   次闸 1 本机关保密办（2 名同看，头名说法定论，后名留底）
+--   末闸 2 上级主管部门（2 名同「可」才过，一可一不可挂待议）
+-- 唯一算齐口径在引擎一处：段位、已签数、在办张数、回数核对全由受理簿逐笔点出，
+-- 报文里写的段位人数一律不算数。另起单／改旧笔／追补签三暗门不留。
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS t_secre_countersign (
+  id bigint NOT NULL COMMENT '主键',
+  cs_no varchar(64) DEFAULT NULL COMMENT '密级变更会签单号（一载体一行变更只带得出这一张）',
+  carrier_id bigint DEFAULT NULL COMMENT '册面载体行（同一件载体、同一回变更只带一张）',
+  carrier_no varchar(64) DEFAULT NULL COMMENT '载体件码（冗余，受理簿对件用）',
+  change_kind int DEFAULT NULL COMMENT '往上抬/往下压/整个解开 1抬 2压 3解密',
+  level_from int DEFAULT NULL COMMENT '自哪一级挪来',
+  level_to int DEFAULT NULL COMMENT '挪到哪一级（解开记 0）',
+  node_no int DEFAULT NULL COMMENT '当前停在哪一闸 0头闸 1次闸 2末闸（系统点，不留手填格）',
+  round_no int DEFAULT '1' COMMENT '走到第几轮（每压回一次加一，本轮与上轮各放各格）',
+  status int DEFAULT NULL COMMENT '情形 0在签 1待议(末闸一可一不可挂住) 2齐闸封住 3已压回重走',
+  open_flag int DEFAULT '1' COMMENT '未齐闸挂账记1，齐闸置NULL（唯一索引借NULL可重，挡一件载体两张在办单）',
+  seal_time datetime DEFAULT NULL COMMENT '齐闸封单那一刻',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除（会签单不许删，仅留列对齐基线）',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_carrier_open (carrier_id, open_flag),
+  KEY idx_cs_no (cs_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='密级变更三道闸会签单';
+
+CREATE TABLE IF NOT EXISTS t_secre_countersign_sign (
+  id bigint NOT NULL COMMENT '主键',
+  cs_id bigint NOT NULL COMMENT '所属会签单',
+  round_no int NOT NULL COMMENT '第几轮落下（本轮与上轮各放各格，哪天补的各有凭据）',
+  node_no int NOT NULL COMMENT '落在哪一闸 0头闸 1次闸 2末闸',
+  seq_no int NOT NULL COMMENT '本闸本轮第几笔（同一瞬两笔也各按先后记，不并成一句）',
+  signer varchar(64) NOT NULL COMMENT '落字人（一支笔只认本人那一刻）',
+  verdict int NOT NULL COMMENT '落字 1可 0不可',
+  sign_time datetime NOT NULL COMMENT '落字那一刻（日后复核只认这一刻）',
+  voided int DEFAULT '0' COMMENT '本笔是否随本闸压回作账内抹除 0留底 1本轮抹（旧轮旧字一个不动）',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注（落字原话留底，两行都摆着）',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_cs_round_node_seq (cs_id, round_no, node_no, seq_no),
+  KEY idx_cs_signer (cs_id, signer)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='会签逐闸受理簿（一笔一行，回数与台账都对它）';
+
+CREATE TABLE IF NOT EXISTS t_secre_level_log (
+  id bigint NOT NULL COMMENT '主键',
+  carrier_id bigint NOT NULL COMMENT '载体行（与册面那一行改动出自同一回计算）',
+  carrier_no varchar(64) DEFAULT NULL COMMENT '载体件码',
+  cs_id bigint NOT NULL COMMENT '凭的是哪一张会签单',
+  cs_no varchar(64) DEFAULT NULL COMMENT '会签单号',
+  level_from int DEFAULT NULL COMMENT '从哪一级',
+  level_to int DEFAULT NULL COMMENT '到哪一级（解开记 0）',
+  signers varchar(500) DEFAULT NULL COMMENT '三闸都有谁落的字（逐闸点出来串成）',
+  seal_time datetime NOT NULL COMMENT '齐闸落定那一刻',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (id),
+  KEY idx_level_log_carrier (carrier_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='载体密级变更履历（一段一段倒着捋）';
 
 CREATE TABLE IF NOT EXISTS t_secre_org_book (
   id bigint NOT NULL COMMENT '主键',
@@ -134,3 +207,10 @@ INSERT IGNORE INTO t_secre_org_book (id, book_no, book_name, book_kind, road_nam
 VALUES (0, 'ML00', '浔州区谷城街道·中共谷城市委机关（机关类，在册）', '机关', '浔州省—谷城市—浔州区—谷城街道', 0, 0, 'seed', NOW()),
        (1, 'ML01', '北塔区岭南区·市测绘院下属资料室（已并走撤出）', '事业单位', '浔州省—谷城市—北塔区—岭南街道', 1, 0, 'seed', NOW());
 
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 已按旧版建过库的，执行下面这段迁库；新库不必。
+-- 旧 t_secre_level_bill 及其 approve/reject/rollback 仍原样保留（形状锁住），
+-- 密级变更一律改走 t_secre_countersign 三道闸会签；两者不互改样子。
+-- ALTER TABLE t_secre_carrier ADD COLUMN level_no int DEFAULT NULL
+--   COMMENT '密级栏 1秘密 2机密 3绝密（只随齐闸会签单换，不手填）' AFTER content;

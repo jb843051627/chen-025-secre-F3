@@ -71,6 +71,11 @@ public class TSecreCarrier implements Serializable {
     @ApiModelProperty(value = "随件交来的载体题名与要件")
     private String content;
 
+    /** 密级栏 1秘密 2机密 3绝密（只随齐闸会签单换，不手填） */
+    @TableField("level_no")
+    @ApiModelProperty(value = "密级栏 1秘密 2机密 3绝密（只随齐闸会签单换，不手填）")
+    private Integer levelNo;
+
     /** 册面情形 0新入册 1已收齐 2缺项 */
     @TableField("status")
     @ApiModelProperty(value = "册面情形 0新入册 1已收齐 2缺项")
@@ -178,6 +183,14 @@ public class TSecreCarrier implements Serializable {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public Integer getLevelNo() {
+        return levelNo;
+    }
+
+    public void setLevelNo(Integer levelNo) {
+        this.levelNo = levelNo;
     }
 
     public Integer getStatus() {

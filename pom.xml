@@ -80,6 +80,12 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- H2：会签六则单元测试用内存库跑真 MyBatis-Plus 与真事务 -->
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<!-- knife4j -->
 		<dependency>
 		    <groupId>com.github.xiaoymin</groupId>

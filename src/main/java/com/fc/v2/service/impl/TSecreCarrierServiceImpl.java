@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.fc.v2.common.exception.file.CountersignRuleException;
 import com.fc.v2.common.support.ConvertUtil;
 import com.fc.v2.mapper.auto.TSecreCarrierMapper;
 import com.fc.v2.mapper.auto.TSecreOrgBookMapper;
@@ -89,6 +90,12 @@ public class TSecreCarrierServiceImpl extends ServiceImpl<TSecreCarrierMapper, T
             if (dupCnt != null && dupCnt > 0) {
                 return 0;
             }
+        }
+
+        // 密级栏没有手填格：只许随齐闸会签单由会签引擎换，借载体通用编辑口递进来的密级一律不作数。
+        if (record.getLevelNo() != null) {
+            throw new CountersignRuleException(
+                    "密级栏不许手工改：抬、压、解开都得走三道闸会签，齐闸后自会换过去");
         }
 
         record.setUpdateTime(new Date());
